@@ -1,0 +1,11 @@
+Flask
+python-dotenv
+truststore
+youtube-transcript-api
+langchain-text-splitters
+langchain-google-genai
+langchain-huggingface
+langchain-community
+langchain-core
+sentence-transformers
+faiss-cpu

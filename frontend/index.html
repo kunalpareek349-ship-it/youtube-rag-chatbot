@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube RAG Chatbot</title>
+    <link rel="stylesheet" href="/static/style.css">
+
+    <style>
+        .summary-box {
+            margin-top: 16px;
+            padding: 16px;
+            background: #f5f7fb;
+            border-radius: 8px;
+            border: 1px solid #dce2ed;
+            white-space: pre-wrap;
+            line-height: 1.7;
+            overflow-wrap: anywhere;
+        }
+
+        .summary-box:empty {
+            display: none;
+        }
+
+        .summary-button,
+        .clear-summary-button,
+        .clear-history-button {
+            margin-top: 12px;
+        }
+
+        .clear-summary-button {
+            margin-left: 8px;
+        }
+
+        .clear-summary-button[hidden] {
+            display: none;
+        }
+
+        /* Chat history styles */
+        .chat-history {
+            margin-top: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .chat-history:empty {
+            display: none;
+        }
+
+        .chat-message {
+            padding: 14px;
+            border-radius: 8px;
+            border: 1px solid #dce2ed;
+            overflow-wrap: anywhere;
+            white-space: pre-wrap;
+            line-height: 1.6;
+        }
+
+        .chat-question {
+            background: #eef4ff;
+        }
+
+        .chat-answer {
+            background: #f5f7fb;
+        }
+
+        .chat-message strong {
+            display: block;
+            margin-bottom: 6px;
+        }
+
+        .history-empty {
+            color: #687386;
+            margin-top: 12px;
+        }
+
+        .history-empty[hidden] {
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+
+        <header>
+            <div class="logo">▶</div>
+            <h1>YouTube RAG Chatbot</h1>
+            <p>Ask questions and get answers from YouTube videos using AI.</p>
+        </header>
+
+        <main>
+
+            <!-- Video URL section -->
+            <section class="card">
+                <h2>1. Add a YouTube Video</h2>
+                <p class="description">
+                    Enter a YouTube link to prepare the video for questions and summaries.
+                </p>
+
+                <label for="videoUrl">YouTube Video URL</label>
+                <input
+                    type="url"
+                    id="videoUrl"
+                    placeholder="Paste your YouTube video link here"
+                >
+
+                <button id="processButton" type="button">
+                    Process Video
+                </button>
+
+                <p id="videoStatus" class="status" role="status" aria-live="polite">
+                    No video processed yet.
+                </p>
+            </section>
+
+            <!-- Video information panel -->
+            <section class="card" id="videoInfoCard" hidden>
+                <h2>Video Information</h2>
+                <p class="description">
+                    Details about the successfully processed video.
+                </p>
+
+                <p><strong>Video Title:</strong> <span id="videoTitle">-</span></p>
+                <p><strong>Video ID:</strong> <span id="videoId">-</span></p>
+                <p><strong>Processing status:</strong> <span id="processingStatus">Not processed</span></p>
+                <p><strong>Transcript chunks:</strong> <span id="chunkCount">0</span></p>
+            </section>
+
+            <!-- Video summary section -->
+            <section class="card">
+                <h2>2. Video Summary</h2>
+                <p class="description">
+                    Generate a simple summary of the processed video's transcript
+                    without watching the entire video.
+                </p>
+
+                <button id="summaryButton" class="summary-button" type="button" disabled>
+                    Generate Video Summary
+                </button>
+
+                <button
+                    id="clearSummaryButton"
+                    class="clear-summary-button"
+                    type="button"
+                    hidden
+                >
+                    Clear Summary
+                </button>
+
+                <p id="summaryStatus" class="status" role="status" aria-live="polite">
+                    Process a video first to generate its summary.
+                </p>
+
+                <div
+                    id="summaryBox"
+                    class="summary-box"
+                    aria-live="polite"
+                ></div>
+            </section>
+
+            <!-- Question section -->
+            <section class="card">
+                <h2>3. Ask a Question</h2>
+                <p class="description">
+                    Ask a question related to the processed video.
+                </p>
+
+                <label for="question">Your Question</label>
+                <input
+                    type="text"
+                    id="question"
+                    placeholder="Ask something about the video"
+                >
+
+                <button id="askButton" type="button" disabled>
+                    Ask AI
+                </button>
+            </section>
+
+            <!-- Latest answer section -->
+            <section class="card">
+                <h2>Latest Answer</h2>
+                <p class="description">
+                    Your latest AI-generated answer will appear below.
+                </p>
+
+                <div id="answer" class="answer" aria-live="polite">
+                    Your answer will appear here.
+                </div>
+            </section>
+
+            <!-- NEW: Chat history section -->
+            <section class="card">
+                <h2>4. Chat History</h2>
+                <p class="description">
+                    Review your previous questions and the answers generated by AI
+                    for the current video.
+                </p>
+
+                <p id="historyEmpty" class="history-empty">
+                    No chat history yet. Process a video and ask a question.
+                </p>
+
+                <div
+                    id="chatHistory"
+                    class="chat-history"
+                    aria-live="polite"
+                ></div>
+
+                <button
+                    id="clearHistoryButton"
+                    class="clear-history-button"
+                    type="button"
+                    hidden
+                >
+                    Clear Chat History
+                </button>
+            </section>
+
+        </main>
+
+        <footer>
+            Powered by Python, Flask, LangChain, FAISS and Gemini AI
+        </footer>
+
+    </div>
+
+    <script>
+        const videoUrlInput = document.getElementById("videoUrl");
+        const processButton = document.getElementById("processButton");
+        const videoStatus = document.getElementById("videoStatus");
+
+        const videoInfoCard = document.getElementById("videoInfoCard");
+        const videoTitleDisplay = document.getElementById("videoTitle");
+        const videoIdDisplay = document.getElementById("videoId");
+        const processingStatusDisplay = document.getElementById("processingStatus");
+        const chunkCountDisplay = document.getElementById("chunkCount");
+
+        const questionInput = document.getElementById("question");
+        const askButton = document.getElementById("askButton");
+        const answerBox = document.getElementById("answer");
+
+        const summaryButton = document.getElementById("summaryButton");
+        const clearSummaryButton = document.getElementById("clearSummaryButton");
+        const summaryStatus = document.getElementById("summaryStatus");
+        const summaryBox = document.getElementById("summaryBox");
+
+        // Chat history elements
+        const chatHistory = document.getElementById("chatHistory");
+        const historyEmpty = document.getElementById("historyEmpty");
+        const clearHistoryButton = document.getElementById("clearHistoryButton");
+
+        let videoProcessed = false;
+        let chatMessages = [];
+
+        // Display chat history
+        function renderChatHistory() {
+            chatHistory.replaceChildren();
+
+            if (chatMessages.length === 0) {
+                historyEmpty.hidden = false;
+                clearHistoryButton.hidden = true;
+                return;
+            }
+
+            historyEmpty.hidden = true;
+            clearHistoryButton.hidden = false;
+
+            chatMessages.forEach((message, index) => {
+                const messageContainer = document.createElement("div");
+                messageContainer.className = "chat-message chat-question";
+
+                const questionLabel = document.createElement("strong");
+                questionLabel.textContent = `Question ${index + 1}:`;
+
+                const questionText = document.createElement("div");
+                questionText.textContent = message.question;
+
+                messageContainer.appendChild(questionLabel);
+                messageContainer.appendChild(questionText);
+
+                const answerContainer = document.createElement("div");
+                answerContainer.className = "chat-message chat-answer";
+
+                const answerLabel = document.createElement("strong");
+                answerLabel.textContent = "AI Answer:";
+
+                const answerText = document.createElement("div");
+                answerText.textContent = message.answer;
+
+                answerContainer.appendChild(answerLabel);
+                answerContainer.appendChild(answerText);
+
+                chatHistory.appendChild(messageContainer);
+                chatHistory.appendChild(answerContainer);
+            });
+        }
+
+        // Process the YouTube URL
+        processButton.addEventListener("click", async () => {
+            const url = videoUrlInput.value.trim();
+
+            if (!url) {
+                videoStatus.textContent = "Please enter a YouTube video URL.";
+                return;
+            }
+
+            processButton.disabled = true;
+            summaryButton.disabled = true;
+            askButton.disabled = true;
+            clearSummaryButton.hidden = true;
+
+            videoProcessed = false;
+            videoInfoCard.hidden = true;
+
+            videoStatus.textContent =
+                "Processing video: fetching transcript and creating embeddings...";
+
+            answerBox.textContent = "Your answer will appear here.";
+            summaryBox.textContent = "";
+            summaryStatus.textContent = "Waiting for video processing...";
+
+            try {
+                const response = await fetch("/api/process-video", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ url: url })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.message || "Video processing failed.");
+                }
+
+                videoProcessed = true;
+
+                // Reset history after a new video is successfully processed
+                chatMessages = [];
+                renderChatHistory();
+
+                videoStatus.textContent = data.message ||
+                    "Video processed successfully! You can now ask questions.";
+
+                videoTitleDisplay.textContent =
+                    data.video_title || "Title unavailable";
+
+                videoIdDisplay.textContent = data.video_id || "Unavailable";
+
+                processingStatusDisplay.textContent =
+                    "Successfully processed";
+
+                chunkCountDisplay.textContent =
+                    Number.isInteger(data.chunks) ? data.chunks : "Unavailable";
+
+                videoInfoCard.hidden = false;
+
+                summaryButton.disabled = false;
+                askButton.disabled = false;
+
+                summaryStatus.textContent =
+                    "Video ready. Click Generate Video Summary.";
+
+            } catch (error) {
+                console.error("Video processing error:", error);
+
+                videoStatus.textContent = error.message ||
+                    "Could not process the video. Check the Flask terminal.";
+
+                processingStatusDisplay.textContent = "Processing failed";
+                summaryStatus.textContent =
+                    "Video processing failed. Please try again.";
+
+            } finally {
+                processButton.disabled = false;
+            }
+        });
+
+        // Generate a summary using the backend
+        summaryButton.addEventListener("click", async () => {
+            if (!videoProcessed) {
+                summaryStatus.textContent =
+                    "Please process a YouTube video first.";
+                return;
+            }
+
+            summaryButton.disabled = true;
+            clearSummaryButton.hidden = true;
+
+            summaryStatus.textContent =
+                "Generating summary... Please wait.";
+
+            summaryBox.textContent = "";
+
+            try {
+                const response = await fetch("/api/summary", {
+                    method: "POST"
+                });
+
+                const data = await response.json();
+
+                if (!response.ok || data.status !== "success") {
+                    throw new Error(
+                        data.message || "Could not generate the video summary."
+                    );
+                }
+
+                summaryBox.textContent =
+                    data.summary || "The backend returned an empty summary.";
+
+                summaryStatus.textContent =
+                    "Video summary generated successfully.";
+
+                if (data.summary) {
+                    clearSummaryButton.hidden = false;
+                }
+
+            } catch (error) {
+                console.error("Summary generation error:", error);
+
+                summaryStatus.textContent =
+                    error.message ||
+                    "Something went wrong while generating the summary. Check the Flask terminal.";
+
+            } finally {
+                summaryButton.disabled = false;
+            }
+        });
+
+        // Clear the displayed summary without affecting the video or chat
+        clearSummaryButton.addEventListener("click", () => {
+            summaryBox.textContent = "";
+            clearSummaryButton.hidden = true;
+
+            summaryStatus.textContent = videoProcessed
+                ? "Summary cleared. Click Generate Video Summary to generate it again."
+                : "Process a video first to generate its summary.";
+        });
+
+        // Ask a question using the RAG backend
+        askButton.addEventListener("click", async () => {
+            const question = questionInput.value.trim();
+
+            if (!question) {
+                answerBox.textContent = "Please enter a question.";
+                return;
+            }
+
+            if (!videoProcessed) {
+                answerBox.textContent =
+                    "Please process a YouTube video successfully before asking questions.";
+                return;
+            }
+
+            askButton.disabled = true;
+            answerBox.textContent =
+                "Searching the transcript and generating an answer...";
+
+            try {
+                const response = await fetch("/api/ask", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ question: question })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.message || "Could not answer the question.");
+                }
+
+                const aiAnswer = data.answer ||
+                    "The backend returned no answer.";
+
+                answerBox.textContent = aiAnswer;
+
+                // Save this question and answer in the visible history
+                chatMessages.push({
+                    question: question,
+                    answer: aiAnswer
+                });
+
+                renderChatHistory();
+
+                questionInput.value = "";
+
+            } catch (error) {
+                console.error("Question answering error:", error);
+
+                answerBox.textContent = error.message ||
+                    "Something went wrong. Check the Flask terminal.";
+
+            } finally {
+                askButton.disabled = !videoProcessed;
+                questionInput.focus();
+            }
+        });
+
+        // Clear chat history without affecting the video or summary
+        clearHistoryButton.addEventListener("click", () => {
+            chatMessages = [];
+            renderChatHistory();
+        });
+
+        // Allow Enter to submit a question
+        questionInput.addEventListener("keydown", (event) => {
+            if (event.key === "Enter" && !askButton.disabled) {
+                askButton.click();
+            }
+        });
+
+        // Show the initial empty history message
+        renderChatHistory();
+    </script>
+
+</body>
+</html>
